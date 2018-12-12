@@ -1,3 +1,6 @@
+// example could be used as simple async event scheduler to monitor
+// batch of tasks and run them in corresponding time
+
 const createGCD = () => {
   const gcdResultsCacheMap = new Map()
 
