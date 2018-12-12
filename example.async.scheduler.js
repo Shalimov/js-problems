@@ -26,8 +26,6 @@ const createGCD = () => {
 
 const calcGCD = createGCD()
 
-// --------------------------------
-
 class AsyncTask {
   constructor(id, name, period, fn) {
     this.id = id;
@@ -63,7 +61,7 @@ class AsyncTaskScheduler {
 
   removeByName(name) {
     const task = [...this.tasksMap.values()].find(task => task.name === name)
-    
+
     if (task) {
       this.tasksMap.delete(task.id);
       this.invalidateRun();
@@ -71,6 +69,10 @@ class AsyncTaskScheduler {
   }
 
   run() {
+    if (this.isRunning) return
+
+    this.invalidateRun()
+
     const runTasks = () => {
       if (this.isStopped) return
 
@@ -80,17 +82,19 @@ class AsyncTaskScheduler {
         this.invokeTasksByTimepoint(timepoint)
       } finally {
         this.currentRound = (this.currentRound + 1) % this.maxRounds;
-        this.timeoutId = setTimeout(runTasks, this.commonPeriod)
+        
+        if (this.isRunning) { 
+          this.timeoutId = setTimeout(runTasks, this.commonPeriod)
+        }
       }
     }
-
 
     this.timeoutId = setTimeout(runTasks, this.commonPeriod)
   }
 
   invokeTasksByTimepoint(timepoint) {
-    for (let task of tasks) {
-      if (task.period === timepoint) {
+    for (let [, task] of this.tasksMap) {
+      if ((timepoint % task.period) === 0) {
         task.fn()
       }
     }
@@ -98,7 +102,7 @@ class AsyncTaskScheduler {
 
   invalidateRun() {
     const tasks = [...this.tasksMap.values()]
-    
+
     this.maxPeriod = Number.MIN_SAFE_INTEGER;
     this.commonPeriod = tasks[0].period;
 
@@ -114,6 +118,11 @@ class AsyncTaskScheduler {
     this.currentRound = 0;
   }
 
+  stop() {
+    clearTimeout(this.timeoutId)
+    this.timeoutId = null
+  }
+
   destroy() {
     this.tasksMap.clear()
     this.maxRounds = Number.MIN_SAFE_INTEGER
@@ -126,4 +135,4 @@ class AsyncTaskScheduler {
 
 AsyncTaskScheduler.taskId = 1;
 
-export default AsyncTaskScheduler;
+export default AsyncTaskScheduler
