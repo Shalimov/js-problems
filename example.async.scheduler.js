@@ -6,7 +6,7 @@ const createGCD = () => {
       return Math.abs(x)
     }
 
-    return this.gcd(y, x % y)
+    return gcd(y, x % y)
   }
 
   const gcdMemo = (x, y) => {
