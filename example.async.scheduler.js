@@ -36,106 +36,144 @@ class AsyncTask {
     this.period = period;
     this.fn = fn;
   }
+
+  run() {
+    this.fn();
+  }
+
+  canRun(timepoint) {
+    return (timepoint % this.period) === 0
+  }
 }
 
 class AsyncTaskScheduler {
+  static taskId = 1
+
   constructor() {
+    this.autorun = false
     this.tasksMap = new Map()
-    this.maxRounds = Number.MIN_SAFE_INTEGER;
-    this.currentRound = 0;
-    this.maxPeriod = Number.MIN_SAFE_INTEGER;
-    this.commonPeriod = Number.POSITIVE_INFINITY;
-    this.timeoutId = null;
+    this.wormholes = []
+    this.currentRound = 0
+    this.commonPeriod = Number.POSITIVE_INFINITY
+    this.timeoutId = null
   }
 
   get isRunning() {
-    return this.timeoutId !== null;
+    return this.timeoutId !== null
   }
 
   get isStopped() {
-    return !this.isRunning;
+    return !this.isRunning
   }
 
   add(name, period, fn) {
     const asyncTask = new AsyncTask(AsyncTaskScheduler.taskId++, name, period, fn)
-    this.tasksMap.set(asyncTask.id, asyncTask);
-    this.invalidateRun();
+    this.tasksMap.set(asyncTask.id, asyncTask)
+    this.invalidateRun(this.autorun)
   }
 
   removeByName(name) {
     const task = [...this.tasksMap.values()].find(task => task.name === name)
 
-    if (task) {
-      this.tasksMap.delete(task.id);
-      this.invalidateRun();
+    if (task && this.tasksMap.delete(task.id)) {
+      this.invalidateRun(this.autorun)
     }
   }
 
   run() {
-    if (this.isRunning) return
+    const stop = this.stop.bind(this)
+
+    if (!this.tasksMap.size) {
+      this.autorun = true
+      return stop
+    }
+
+    if (this.isRunning) return stop
 
     this.invalidateRun()
 
     const runTasks = () => {
       if (this.isStopped) return
 
-      const timepoint = ((this.currentRound + 1) * this.commonPeriod)
+      const timepoint = this.wormholes[this.currentRound] * (this.currentRound + 1)
 
       try {
         this.invokeTasksByTimepoint(timepoint)
       } finally {
-        this.currentRound = (this.currentRound + 1) % this.maxRounds;
-        
-        if (this.isRunning) { 
-          this.timeoutId = setTimeout(runTasks, this.commonPeriod)
-        }
+        if (this.isStopped) return
+
+        this.currentRound = (this.currentRound + 1) % this.wormholes.length
+        this.timeoutId = setTimeout(runTasks, this.wormholes[this.currentRound])
       }
     }
 
-    this.timeoutId = setTimeout(runTasks, this.commonPeriod)
+    this.timeoutId = setTimeout(runTasks, this.wormholes[0])
+
+    return stop
+  }
+
+  rerun() {
+    this.stop()
+    this.run()
   }
 
   invokeTasksByTimepoint(timepoint) {
     for (let [, task] of this.tasksMap) {
-      if ((timepoint % task.period) === 0) {
-        task.fn()
+      if (task.canRun(timepoint)) {
+        task.run()
       }
     }
   }
 
-  invalidateRun() {
+  invalidateRun(rerun) {
     const tasks = [...this.tasksMap.values()]
+    let maxPeriod = Number.MIN_SAFE_INTEGER
 
-    this.maxPeriod = Number.MIN_SAFE_INTEGER;
-    this.commonPeriod = tasks[0].period;
+    this.wormholes.length = 0
+    this.commonPeriod = tasks[0].period
 
     for (let task of tasks) {
-      if (this.maxPeriod < task.period) {
-        this.maxPeriod = task.period;
+      if (maxPeriod < task.period) {
+        maxPeriod = task.period
       }
 
       this.commonPeriod = calcGCD(task.period, this.commonPeriod)
     }
 
-    this.maxRounds = this.maxPeriod / this.commonPeriod;
-    this.currentRound = 0;
+    const maxRounds = maxPeriod / this.commonPeriod
+    let prevTimepoint = 0
+
+    for (let r = 0; r < maxRounds; r += 1) {
+      const timepoint = ((r + 1) * this.commonPeriod)
+      for (let task of tasks) {
+        if (task.canRun(timepoint)) {
+          this.wormholes.push(timepoint - prevTimepoint)
+          prevTimepoint = timepoint
+          break
+        }
+      }
+    }
+
+    this.currentRound = 0
+    
+    if (rerun) {
+      this.rerun()
+    }
   }
 
   stop() {
+    this.autorun = false
     clearTimeout(this.timeoutId)
     this.timeoutId = null
   }
 
   destroy() {
     this.tasksMap.clear()
-    this.maxRounds = Number.MIN_SAFE_INTEGER
-    this.maxPeriod = Number.MIN_SAFE_INTEGER
     this.currentRound = 0
     this.commonPeriod = Number.POSITIVE_INFINITY
+    this.wormholes = null
     this.timeoutId = null
   }
 }
-
-AsyncTaskScheduler.taskId = 1;
 
 export default AsyncTaskScheduler
